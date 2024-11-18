@@ -1,0 +1,28 @@
+# Git Ignore File
+# This file specifies intentionally untracked files to ignore in Git.
+# It's used to avoid committing files such as build artifacts, temporary files,
+# IDE-specific files, and other files that shouldn't be part of the repository.
+
+# Ignore all .d (dependency) files in all directories
+*.d
+
+# Ignore all .mk (make) files in all directories
+*.mk
+makefile
+*.opt
+compile_commands.json
+
+# Ignore all .o (object) files in all directories
+*.o
+
+# Ignore all log files with a specific extension
+*.log
+*.map
+*.out
+*.idx
+*.dot
+*linkinfo.xml
+
+# Ignore Directory
+test/
+/.theia
