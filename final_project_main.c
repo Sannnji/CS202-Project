@@ -18,6 +18,7 @@
 //-----------------------------------------------------------------------------
 // Loads standard C include files
 //-----------------------------------------------------------------------------
+#include <cstdint>
 #include <stdio.h>
 
 //-----------------------------------------------------------------------------
@@ -41,17 +42,22 @@
 void start_microwave();
 void config_pb1_interrupt(void);
 void config_pb2_interrupt(void);
+void GROUP1_IRQHandler(void);
+void input_timer(void);
+void countdown_timer (void);
 
 //-----------------------------------------------------------------------------
 // Define symbolic constants used by the program
 //-----------------------------------------------------------------------------
-#define LOAD_VALUE           4000
-
+#define LOAD_VALUE            (4000)
+#define msec_5                (5)
+#define debounce_delay        (300)
 //-----------------------------------------------------------------------------
 // Define global variables and structures here.
 // NOTE: when possible avoid using global variables
 //-----------------------------------------------------------------------------
-
+g_pb1_pressed = false;
+g_pb2_pressed = false;
 
 // Define a structure to hold different data types
 
@@ -160,7 +166,7 @@ void GROUP1_IRQHandler(void) {
       case (CPUSS_INT_GROUP_IIDX_STAT_INT1):    // PB1
         gpio_mis = GPIOB->CPU_INT.MIS;
         if ((gpio_mis & GPIO_CPU_INT_MIS_DIO18_MASK) == GPIO_CPU_INT_MIS_DIO18_SET) {
-          g_SW1_pressed = true;
+          g_pb1_pressed = true;
           // Manually clear bit to acknowledge interrupt
           GPIOB->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO18_CLR;
         }
@@ -169,7 +175,7 @@ void GROUP1_IRQHandler(void) {
       case (CPUSS_INT_GROUP_IIDX_STAT_INT0):    // PB2
         gpio_mis = GPIOA->CPU_INT.MIS;
         if ((gpio_mis & GPIO_CPU_INT_MIS_DIO15_MASK) == GPIO_CPU_INT_MIS_DIO15_SET) {
-          g_SW2_pressed = true;
+          g_pb2_pressed = true;
           
           // Manually clear bit to acknowledge interrupt
           GPIOA->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO15_CLR;
@@ -178,4 +184,85 @@ void GROUP1_IRQHandler(void) {
     }
 
   } while (group_iidx_status != 0);
+}
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void start_microwave (void)
+{
+  while (!g_pb1_pressed)
+  {
+    input_timer();
+  }
+  while (g_pb1_pressed)
+  {
+    countdown_timer();
+  }
+}
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void input_timer (void)
+{
+  uint8_t key_value;
+  static uint8_t seg7_dig = 0;
+  const char reset [] = {0x00 , 0x00 , 0x00 ,0x00};
+  uint8_t i;
+
+  keypad_scan() = key_value;
+
+  if ((key_value != 0x10) & (key_value < 0x0A) & (seg7_dig < 5))
+  {
+    wait_no_key_pressed();
+    seg7_hex(key_value, uint8_t seg7_dig);
+    msec_delay(debounce_delay);
+    seg7_dig++;
+  }
+  
+  if (key_value == 0x0C)
+  {
+    for (i = 0; i < 4; i++)
+    {
+      seg7_hex(reset[i] , i);
+      msec_delay(msec_5);
+    }
+    seg7_dig = 0;
+  }
+}
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void countdown_timer (void)
+{
+  
 }
