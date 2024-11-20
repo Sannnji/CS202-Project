@@ -72,11 +72,56 @@ int main(void) {
 
   I2C_init();
   UART_init(115200);
- 
-  // Endless loop to prevent program from ending
-  while (1);
-
+  
 } /* main */
+
+void configure_microwave() {
+  bool power_on = false;
+  bool door_closed = true;
+
+  typedef enum state {
+    IDLE_STATE,
+    SET_TIME,
+    CHECK_DOOR_OPEN,
+    MOTOR_CCW
+  } FSM_TYPE_t;
+  FSM_TYPE_t state = MOTOR_OFF1;
+
+
+  uint8_t key = 0;
+  uint8_t key_index = 3;
+  uint8_t key_list[4];
+  while (!power_on) {
+    // get keypress or start microwave
+    do {
+      key = keypad_scan();
+
+      if (g_SW2_pressed) {
+        if (sizeof(key_list) > 0 && door_closed) {
+          start_microwave();
+        } 
+        g_SW2_pressed = false;
+      }
+
+      if (g_SW1_pressed) {
+        door_closed = !door_closed;
+      }
+    } while (key == 0x10);
+
+    // Clear time
+    if (key == 'C') {
+      key_list.clear()
+    }
+
+    if (key != 'ABCD') {
+      key_list[key_index--] = key;
+    }
+
+    seg7_hex(key);
+  }
+
+  start_microwave();
+}
 
 void start_microwave() {
   
