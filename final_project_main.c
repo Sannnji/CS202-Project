@@ -18,7 +18,6 @@
 //-----------------------------------------------------------------------------
 // Loads standard C include files
 //-----------------------------------------------------------------------------
-#include <cstdint>
 #include <stdio.h>
 
 //-----------------------------------------------------------------------------
@@ -27,39 +26,67 @@
 #include <ti/devices/msp/msp.h>
 #include "clock.h"
 #include "LaunchPad.h"
-
 #include "lcd1602.h"
-#include "uart.h"
 
-#include "adc.h"
 #include "ti/devices/msp/m0p/mspm0g350x.h"
 #include "ti/devices/msp/peripherals/hw_adc12.h"
 #include "ti/devices/msp/peripherals/hw_oa.h"
+
+#include "uart.h"
+#include "adc.h"
 
 //-----------------------------------------------------------------------------
 // Define function prototypes used by the program
 //-----------------------------------------------------------------------------
 void start_microwave();
+int menu_selection();
+void configure_microwave();
+int power_selection();
+
+void input_timer(void);
+void countdown_timer (void);
+bool check_time_array(uint8_t key_list[]);
+
+void printMsg(char *str);
+void skipLine(void);
+
 void config_pb1_interrupt(void);
 void config_pb2_interrupt(void);
 void GROUP1_IRQHandler(void);
-void input_timer(void);
-void countdown_timer (void);
 
 //-----------------------------------------------------------------------------
 // Define symbolic constants used by the program
 //-----------------------------------------------------------------------------
 #define LOAD_VALUE            (4000)
 #define msec_5                (5)
-#define debounce_delay        (300)
+#define DEBOUNCE_DELAY        (300)
+
+#define MENU_ITEM1            '1'
+#define MENU_ITEM2            '2'
+#define MENU_ITEM3            '3'
+#define MENU_ITEM4            '4'
+#define MENU_ITEM5            '5'
+#define MENU_ITEM6            '6'
+
+#define DEFROST_TIME          1000
+#define PIZZA_TIME             700
+#define POPCORN_TIME           300
+#define POTATO_TIME            800
+#define BEVERAGE_TIME           40
+
+#define NUMPAD_KEY_A            10
+#define NUMPAD_KEY_B            11
+#define NUMPAD_KEY_C            12
+#define NUMPAD_KEY_D            13
+#define NUMPAD_KEY_ASTERISK     14
+#define NUMPAD_KEY_#            15
+
 //-----------------------------------------------------------------------------
 // Define global variables and structures here.
 // NOTE: when possible avoid using global variables
 //-----------------------------------------------------------------------------
-g_pb1_pressed = false;
-g_pb2_pressed = false;
-
-// Define a structure to hold different data types
+bool g_pb1_pressed = false;
+bool g_pb2_pressed = false;
 
 int main(void) {
   clock_init_40mhz();
@@ -72,65 +99,396 @@ int main(void) {
   lpsw_init();
   led_init();
 
-  motor0_init();
-  motor0_pwm_init(LOAD_VALUE, 0);
-  ADC0_init(ADC12_MEMCTL_VRSEL_INTREF_VSSA);
-
   I2C_init();
   UART_init(115200);
+
+  // interferes with LEDS so use only when motor runs
+  // motor0_init();
+  // motor0_pwm_init(LOAD_VALUE, 0);
+
+  ADC0_init(ADC12_MEMCTL_VRSEL_INTREF_VSSA);
+
+  config_pb1_interrupt();
+  config_pb2_interrupt();
+
+  lcd_clear();
+  led_enable();
+
+  configure_microwave();
   
+  // Disable interrupts
+  NVIC_DisableIRQ(GPIOA_INT_IRQn);
+  NVIC_DisableIRQ(GPIOB_INT_IRQn);
 } /* main */
 
 void configure_microwave() {
   bool power_on = false;
   bool door_closed = true;
 
-  typedef enum state {
-    IDLE_STATE,
-    SET_TIME,
-    CHECK_DOOR_OPEN,
-    MOTOR_CCW
-  } FSM_TYPE_t;
-  FSM_TYPE_t state = MOTOR_OFF1;
-
-
+  uint16_t microwave_power = 0;
   uint8_t key = 0;
-  uint8_t key_index = 3;
+  uint8_t key_index = 0;
   uint8_t key_list[4];
+
   while (!power_on) {
     // get keypress or start microwave
     do {
       key = keypad_scan();
+      wait_no_key_pressed();
+      msec_delay(DEBOUNCE_DELAY);
 
-      if (g_SW2_pressed) {
-        if (sizeof(key_list) > 0 && door_closed) {
-          start_microwave();
-        } 
-        g_SW2_pressed = false;
+      // Start Microwave if valid input time
+      if (g_pb2_pressed) {
+        if (key_index > 0 && door_closed) {
+          lcd_set_ddram_addr(LCD_LINE2_ADDR);
+          lcd_write_string("Microwave started");
+          g_pb2_pressed = false;
+          // start_microwave();
+        }
+        g_pb2_pressed = false;
       }
 
-      if (g_SW1_pressed) {
+      // Open or close door
+      if (g_pb1_pressed) {
         door_closed = !door_closed;
+        if (door_closed) {
+          lcd_set_ddram_addr(LCD_LINE2_ADDR);
+          lcd_write_string("Door Closed");
+        } else {
+          lcd_set_ddram_addr(LCD_LINE2_ADDR);
+          lcd_write_string("Door Open");
+        }
+        g_pb1_pressed = false;
       }
     } while (key == 0x10);
 
-    // Clear time
-    if (key == 'C') {
-      key_list.clear()
+    // Clear time on LCD
+    if (key == 12) {
+      lcd_clear();
+      key_index = 0;
+
+      for (uint8_t i = 0; i < sizeof(key_list); i++) {
+        key_list[i] = 0;
+      }
     }
 
-    if (key != 'ABCD') {
-      key_list[key_index--] = key;
+    if (key == 11) {
+      int selected_item = menu_selection();
+
+      lcd_set_ddram_addr(LCD_LINE1_ADDR);
+      lcd_write_doublebyte(selected_item);
+      
+      // start_microwave();
     }
 
-    seg7_hex(key);
+    if (key == 10) {
+      microwave_power = power_selection();
+      lcd_clear();
+    }
+
+    if (key != 10 && key != 11 && key != 12 && key != 13 && key != 14 && key != 15 && key_index <= 3) {
+      lcd_set_ddram_addr(LCD_LINE1_ADDR + key_index);
+      hex_to_lcd(key);
+      key_list[key_index++] = key;
+    }
   }
 
-  start_microwave();
+  // start_microwave();
 }
 
-void start_microwave() {
+int menu_selection() {
+  char menu[] = "MENU OPTIONS\n"
+                "    1. Defrost\n"
+                "    2. Pizza\n"
+                "    3. Popcorn\n"
+                "    4. Potato\n"
+                "    5. Beverage\n"
+                "    6. Exit\n\n"
+                "Enter your selection: ";
+  char errorMsg[] = "Please enter a valid menu option";
+  bool finished = false;
+  int time = 0;
+
+  while (!finished) {
+    printMsg(menu);
+    char input = UART_in_char();
+    UART_out_char(input);
+    skipLine();
+    if (input > '6' || input < '1') {
+      printMsg(errorMsg);
+      skipLine();
+    }
+
+    switch (input) {
+      case (MENU_ITEM1):
+        time = DEFROST_TIME;
+        finished = true;
+        break;
+        
+      case (MENU_ITEM2):
+        time = PIZZA_TIME;
+        break;
+
+      case (MENU_ITEM3):
+        time = POPCORN_TIME;
+        break;
+
+      case (MENU_ITEM4):
+        time = POTATO_TIME;
+        break;   
+
+      case (MENU_ITEM5):
+        time = BEVERAGE_TIME;
+        break;    
+
+      case (MENU_ITEM6):
+        finished = true;
+        break;        
+    }
+  }
+
+  return time;
+}
+
+int power_selection() {
+  uint16_t power = 0;
+  uint16_t key = 0;
+  bool finished = false;
+
+  lcd_set_ddram_addr(LCD_LINE1_ADDR);
+  lcd_write_string("Pwr Level: ");
+
+  lcd_set_ddram_addr(LCD_LINE2_ADDR);
+  lcd_write_string("Press * to exit");
+
+  while (!finished) {
+    do {
+      key = keypad_scan();
+      wait_no_key_pressed();
+      msec_delay(DEBOUNCE_DELAY);
+    } while (key == 0x10);
+
+    switch (key) {
+      case (1):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_byte(power);
+      
+        leds_on(key);
+        break;
+
+      case (2):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_byte(power);
+      
+        leds_on(key);
+        break;
+
+      case (3):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_10);
+        lcd_write_doublebyte(power);
+      
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_write_string("Pwr Level: ");
+
+        leds_on(key);
+        break;
+
+      case (4):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+
+      case (5):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+              
+      case (6):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+
+      case (7):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+
+      case (8):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+        
+      case (9):
+        power = key * 100;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(key);
+        break;
+
+      case (0):
+        power = 10000;
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+        lcd_write_doublebyte(power);
+      
+        leds_on(10);
+        break;
+      
+      case (NUMPAD_KEY_ASTERISK): 
+        finished = true;
+    }
+  }
+
+  return power;
+}
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void start_microwave (void) {
+  while (!g_pb1_pressed)
+  {
+    input_timer();
+  }
+  while (g_pb1_pressed)
+  {
+    countdown_timer();
+  }
+}
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+// void input_timer (void)
+// {
+//   uint8_t key_value;
+//   static uint8_t seg7_dig = 0;
+//   const char reset [] = {0x00 , 0x00 , 0x00 ,0x00};
+//   uint8_t i;
+
+  // keypad_scan() = key_value;
+
+//   if ((key_value != 0x10) & (key_value < 0x0A) & (seg7_dig < 5))
+//   {
+//     wait_no_key_pressed();
+//     seg7_hex(key_value, uint8_t seg7_dig);
+//     msec_delay(debounce_delay);
+//     seg7_dig++;
+//   }
   
+//   if (key_value == 0x0C)
+//   {
+//     for (i = 0; i < 4; i++)
+//     {
+//       seg7_hex(reset[i] , i);
+//       msec_delay(msec_5);
+//     }
+//     seg7_dig = 0;
+//   }
+// }
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+// 
+//
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void countdown_timer (void) {}
+
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function takes a string and prints it into the terminal emulator 
+// 
+// INPUT PARAMETERS:
+//    str - a string
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void printMsg(char *str) {
+  uint8_t index = 0;
+
+  while (str[index] != '\0') {
+    UART_out_char(str[index]);
+    index++;
+  }
+}
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function performs a line skip in the terminal emulator.
+//     
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
+void skipLine() {
+  UART_out_char('\n');
+  UART_out_char('\n');
 }
 
 //------------------------------------------------------------------------------
@@ -229,85 +587,4 @@ void GROUP1_IRQHandler(void) {
     }
 
   } while (group_iidx_status != 0);
-}
-//------------------------------------------------------------------------------
-// DESCRIPTION:
-// 
-//
-// INPUT PARAMETERS:
-//    none
-//
-// OUTPUT PARAMETERS:
-//    none
-//
-// RETURN:
-//    none
-// -----------------------------------------------------------------------------
-void start_microwave (void)
-{
-  while (!g_pb1_pressed)
-  {
-    input_timer();
-  }
-  while (g_pb1_pressed)
-  {
-    countdown_timer();
-  }
-}
-//------------------------------------------------------------------------------
-// DESCRIPTION:
-// 
-//
-// INPUT PARAMETERS:
-//    none
-//
-// OUTPUT PARAMETERS:
-//    none
-//
-// RETURN:
-//    none
-// -----------------------------------------------------------------------------
-void input_timer (void)
-{
-  uint8_t key_value;
-  static uint8_t seg7_dig = 0;
-  const char reset [] = {0x00 , 0x00 , 0x00 ,0x00};
-  uint8_t i;
-
-  keypad_scan() = key_value;
-
-  if ((key_value != 0x10) & (key_value < 0x0A) & (seg7_dig < 5))
-  {
-    wait_no_key_pressed();
-    seg7_hex(key_value, uint8_t seg7_dig);
-    msec_delay(debounce_delay);
-    seg7_dig++;
-  }
-  
-  if (key_value == 0x0C)
-  {
-    for (i = 0; i < 4; i++)
-    {
-      seg7_hex(reset[i] , i);
-      msec_delay(msec_5);
-    }
-    seg7_dig = 0;
-  }
-}
-//------------------------------------------------------------------------------
-// DESCRIPTION:
-// 
-//
-// INPUT PARAMETERS:
-//    none
-//
-// OUTPUT PARAMETERS:
-//    none
-//
-// RETURN:
-//    none
-// -----------------------------------------------------------------------------
-void countdown_timer (void)
-{
-  
 }
