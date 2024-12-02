@@ -12,8 +12,8 @@ C_SRCS += \
 ../LaunchPad.c \
 ../adc.c \
 ../clock.c \
+../final_project_main.c \
 ../lcd1602.c \
-../main.c \
 ../spi.c \
 ../uart.c 
 
@@ -21,8 +21,8 @@ C_DEPS += \
 ./LaunchPad.d \
 ./adc.d \
 ./clock.d \
+./final_project_main.d \
 ./lcd1602.d \
-./main.d \
 ./spi.d \
 ./uart.d 
 
@@ -30,8 +30,8 @@ OBJS += \
 ./LaunchPad.o \
 ./adc.o \
 ./clock.o \
+./final_project_main.o \
 ./lcd1602.o \
-./main.o \
 ./spi.o \
 ./uart.o 
 
@@ -39,8 +39,8 @@ OBJS__QUOTED += \
 "LaunchPad.o" \
 "adc.o" \
 "clock.o" \
+"final_project_main.o" \
 "lcd1602.o" \
-"main.o" \
 "spi.o" \
 "uart.o" 
 
@@ -48,8 +48,8 @@ C_DEPS__QUOTED += \
 "LaunchPad.d" \
 "adc.d" \
 "clock.d" \
+"final_project_main.d" \
 "lcd1602.d" \
-"main.d" \
 "spi.d" \
 "uart.d" 
 
@@ -57,8 +57,8 @@ C_SRCS__QUOTED += \
 "../LaunchPad.c" \
 "../adc.c" \
 "../clock.c" \
+"../final_project_main.c" \
 "../lcd1602.c" \
-"../main.c" \
 "../spi.c" \
 "../uart.c" 
 

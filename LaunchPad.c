@@ -1667,10 +1667,10 @@ uint32_t I2C_send1(uint8_t slave, uint8_t data1)
 // -----------------------------------------------------------------------------
 void motor0_init(void)
 {
-  // Set PA28 (LD0) for TIMA0_C3
-  IOMUX->SECCFG.PINCM[LED0_IOMUX] = IOMUX_PINCM3_PF_TIMA0_CCP3 | 
+  // Set PA28 (LD7) for TIMA0_C3
+  IOMUX->SECCFG.PINCM[LED7_IOMUX] = IOMUX_PINCM39_PF_TIMA0_CCP3 | 
                                     IOMUX_PINCM_PC_CONNECTED;
-  GPIOA->DOESET31_0 = LED0_MASK;
+  GPIOA->DOESET31_0 = LED7_MASK;
 
   // Set PA31 (LD1) for output
   IOMUX->SECCFG.PINCM[LED1_IOMUX] = PINCM_GPIO_PIN_FUNC | 
