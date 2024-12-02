@@ -151,7 +151,7 @@ void configure_microwave() {
           lcd_write_string("Microwave started");
           uint16_t time = time_array_to_int(key_list, key_index);
           run_microwave = true;
-          start_microwave(time, microwave_power);
+          // start_microwave(time, microwave_power);
           g_pb2_pressed = false;
         }
         g_pb2_pressed = false;
