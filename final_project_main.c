@@ -18,6 +18,7 @@
 //-----------------------------------------------------------------------------
 // Loads standard C include files
 //-----------------------------------------------------------------------------
+#include <math.h>
 #include <stdio.h>
 
 //-----------------------------------------------------------------------------
@@ -38,7 +39,7 @@
 //-----------------------------------------------------------------------------
 // Define function prototypes used by the program
 //-----------------------------------------------------------------------------
-void start_microwave();
+void start_microwave(uint16_t time, uint8_t power);
 int menu_selection();
 void configure_microwave();
 int power_selection();
@@ -47,6 +48,7 @@ void input_timer(void);
 void countdown_timer (void);
 bool check_time_array(uint8_t key_list[]);
 
+uint16_t time_array_to_int(uint8_t key_list[], uint8_t max_index);
 void printMsg(char *str);
 void skipLine(void);
 
@@ -81,12 +83,17 @@ void GROUP1_IRQHandler(void);
 #define NUMPAD_KEY_ASTERISK     14
 #define NUMPAD_KEY_#            15
 
+#define MSPM0_CLOCK_FREQUENCY                                             (40E6)
+#define SYST_TICK_PERIOD                                              (10.25E-3)
+#define SYST_TICK_PERIOD_COUNT        (SYST_TICK_PERIOD * MSPM0_CLOCK_FREQUENCY)
+
 //-----------------------------------------------------------------------------
 // Define global variables and structures here.
 // NOTE: when possible avoid using global variables
 //-----------------------------------------------------------------------------
 bool g_pb1_pressed = false;
 bool g_pb2_pressed = false;
+bool run_microwave = false;
 
 int main(void) {
   clock_init_40mhz();
@@ -98,22 +105,22 @@ int main(void) {
   dipsw_init();
   lpsw_init();
   led_init();
+  led_enable();
 
   I2C_init();
   UART_init(115200);
 
   // interferes with LEDS so use only when motor runs
-  // motor0_init();
-  // motor0_pwm_init(LOAD_VALUE, 0);
+  motor0_init();
+  motor0_pwm_init(LOAD_VALUE, 0);
 
+  sys_tick_init(SYST_TICK_PERIOD_COUNT);
   ADC0_init(ADC12_MEMCTL_VRSEL_INTREF_VSSA);
 
   config_pb1_interrupt();
   config_pb2_interrupt();
 
   lcd_clear();
-  led_enable();
-
   configure_microwave();
   
   // Disable interrupts
@@ -125,7 +132,7 @@ void configure_microwave() {
   bool power_on = false;
   bool door_closed = true;
 
-  uint16_t microwave_power = 0;
+  uint8_t microwave_power = 2;
   uint8_t key = 0;
   uint8_t key_index = 0;
   uint8_t key_list[4];
@@ -142,8 +149,10 @@ void configure_microwave() {
         if (key_index > 0 && door_closed) {
           lcd_set_ddram_addr(LCD_LINE2_ADDR);
           lcd_write_string("Microwave started");
+          uint16_t time = time_array_to_int(key_list, key_index);
+          run_microwave = true;
+          start_microwave(time, microwave_power);
           g_pb2_pressed = false;
-          // start_microwave();
         }
         g_pb2_pressed = false;
       }
@@ -270,7 +279,7 @@ int power_selection() {
 
     switch (key) {
       case (1):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_byte(power);
@@ -279,7 +288,7 @@ int power_selection() {
         break;
 
       case (2):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_byte(power);
@@ -288,7 +297,7 @@ int power_selection() {
         break;
 
       case (3):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_10);
         lcd_write_doublebyte(power);
@@ -300,7 +309,7 @@ int power_selection() {
         break;
 
       case (4):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -309,7 +318,7 @@ int power_selection() {
         break;
 
       case (5):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -318,7 +327,7 @@ int power_selection() {
         break;
               
       case (6):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -327,7 +336,7 @@ int power_selection() {
         break;
 
       case (7):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -336,7 +345,7 @@ int power_selection() {
         break;
 
       case (8):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -345,7 +354,7 @@ int power_selection() {
         break;
         
       case (9):
-        power = key * 100;
+        power = key * 10;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -354,7 +363,7 @@ int power_selection() {
         break;
 
       case (0):
-        power = 10000;
+        power = 100;
         lcd_set_ddram_addr(LCD_LINE1_ADDR);
         lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
         lcd_write_doublebyte(power);
@@ -368,6 +377,44 @@ int power_selection() {
   }
 
   return power;
+}
+
+// void start_microwave(uint16_t time, uint8_t power) {
+//   uint16_t time_in_msec = time * 1000;
+//   uint8_t duty_cycle = ((power) * 100) / 16;
+
+//   lcd_clear();
+//   lcd_write_doublebyte(time);
+
+//   motor0_pwm_enable();
+//   motor0_set_pwm_dc(duty_cycle);
+
+//   lcd_set_ddram_addr(LCD_LINE2_ADDR);
+//   lcd_write_doublebyte(time_in_msec);
+
+//   // for (uint16_t count = 0; count < time_in_msec; count++) {
+//   //   lcd_set_ddram_addr(LCD_LINE1_ADDR);
+//   //   lcd_write_doublebyte(count);
+//   //   lcd_set_ddram_addr(LCD_LINE2_ADDR);
+//   //   lcd_write_doublebyte(time_in_msec);
+//   //   msec_delay(1);
+//   // }
+
+//   msec_delay(time_in_msec);
+  
+//   motor0_pwm_disable();
+// }
+
+uint16_t time_array_to_int(uint8_t key_list[], uint8_t max_index) {
+  uint16_t time = 0;
+  uint16_t multiplier = pow(10, max_index - 1);
+
+  for (uint8_t i = 0; i < max_index; i++) {
+    time += key_list[i] * multiplier;
+    multiplier /= 10;
+  }
+
+  return time;
 }
 
 //------------------------------------------------------------------------------
@@ -409,6 +456,20 @@ void skipLine() {
   UART_out_char('\n');
   UART_out_char('\n');
 }
+
+// void SysTick_Handler(void) {
+//   int second_intervals = 0;
+
+//   if (run_microwave) {
+//     for (int i = 0; i < 3000; i++) {
+//       if (second_intervals == i) {
+//         lcd_set_ddram_addr(LCD_LINE1_ADDR);
+//         lcd_write_doublebyte(i);
+//         second_intervals += 1000;
+//       }
+//     }
+//   }
+// }
 
 //------------------------------------------------------------------------------
 // DESCRIPTION:
