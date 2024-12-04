@@ -44,11 +44,10 @@ int menu_selection();
 void configure_microwave();
 int power_selection();
 
-void input_timer(void);
-void countdown_timer (void);
-bool check_time_array(uint8_t key_list[]);
+void clear_time(uint8_t *time_array[], uint8_t *time_idx) ;
+bool check_time_array(uint8_t time_array[]);
 
-uint16_t time_array_to_int(uint8_t key_list[], uint8_t max_index);
+uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index);
 void printMsg(char *str);
 void skipLine(void);
 
@@ -62,6 +61,9 @@ void GROUP1_IRQHandler(void);
 #define LOAD_VALUE            (4000)
 #define msec_5                (5)
 #define DEBOUNCE_DELAY        (300)
+#define BLINK_DELAY           1000
+#define HOLD_ZERO_COUNT       1000
+#define MAX_TIME_ARR_IDX      3
 
 #define MENU_ITEM1            '1'
 #define MENU_ITEM2            '2'
@@ -81,7 +83,7 @@ void GROUP1_IRQHandler(void);
 #define NUMPAD_KEY_C            12
 #define NUMPAD_KEY_D            13
 #define NUMPAD_KEY_ASTERISK     14
-#define NUMPAD_KEY_#            15
+#define NUMPAD_KEY_POUND        15
 
 #define MSPM0_CLOCK_FREQUENCY                                             (40E6)
 #define SYST_TICK_PERIOD                                              (10.25E-3)
@@ -94,6 +96,9 @@ void GROUP1_IRQHandler(void);
 bool g_pb1_pressed = false;
 bool g_pb2_pressed = false;
 bool run_microwave = false;
+
+uint16_t time_in_msec = 0;
+uint16_t time = 0;
 
 int main(void) {
   clock_init_40mhz();
@@ -131,14 +136,20 @@ int main(void) {
 void configure_microwave() {
   bool power_on = false;
   bool door_closed = true;
+  bool reprint_menu = false;
 
-  uint8_t microwave_power = 2;
+  uint8_t microwave_power = 5;
   uint8_t key = 0;
-  uint8_t key_index = 0;
-  uint8_t key_list[4];
+  uint8_t time_idx = 0;
+  uint8_t time_array[4];
 
   while (!power_on) {
     // get keypress or start microwave
+    lcd_set_ddram_addr(LCD_LINE1_ADDR);
+    lcd_write_string("Time: ");
+    lcd_set_ddram_addr(LCD_LINE2_ADDR);
+    lcd_write_string("Power: 10");
+
     do {
       key = keypad_scan();
       wait_no_key_pressed();
@@ -146,13 +157,17 @@ void configure_microwave() {
 
       // Start Microwave if valid input time
       if (g_pb2_pressed) {
-        if (key_index > 0 && door_closed) {
-          lcd_set_ddram_addr(LCD_LINE2_ADDR);
-          lcd_write_string("Microwave started");
-          uint16_t time = time_array_to_int(key_list, key_index);
+        if (time_idx > 0 && door_closed) {
+          time = time_array_to_int(time_array, time_idx);
+          
           run_microwave = true;
-          // start_microwave(time, microwave_power);
+          start_microwave(time, microwave_power);
+          clear_time(time_array, &time_idx);
           g_pb2_pressed = false;
+
+          // Set key to exit loop and reprint
+          key = 1;
+          reprint_menu = true;
         }
         g_pb2_pressed = false;
       }
@@ -171,38 +186,38 @@ void configure_microwave() {
       }
     } while (key == 0x10);
 
-    // Clear time on LCD
-    if (key == 12) {
-      lcd_clear();
-      key_index = 0;
-
-      for (uint8_t i = 0; i < sizeof(key_list); i++) {
-        key_list[i] = 0;
+    if (!reprint_menu) {
+      // Power Selection
+      if (key == NUMPAD_KEY_A) {
+        microwave_power = power_selection();
+        lcd_clear();
       }
-    }
 
-    if (key == 11) {
-      int selected_item = menu_selection();
+      // Menu Selection
+      if (key == NUMPAD_KEY_B) {
+        int selected_item = menu_selection();
 
-      lcd_set_ddram_addr(LCD_LINE1_ADDR);
-      lcd_write_doublebyte(selected_item);
-      
-      // start_microwave();
-    }
+        lcd_set_ddram_addr(LCD_LINE1_ADDR);
+        lcd_write_doublebyte(selected_item);
+        
+        // start_microwave();
+      }
 
-    if (key == 10) {
-      microwave_power = power_selection();
-      lcd_clear();
-    }
+      // Clear time on LCD
+      if (key == NUMPAD_KEY_C) {
+        clear_time(time_array, &time_idx);
+      }
 
-    if (key != 10 && key != 11 && key != 12 && key != 13 && key != 14 && key != 15 && key_index <= 3) {
-      lcd_set_ddram_addr(LCD_LINE1_ADDR + key_index);
-      hex_to_lcd(key);
-      key_list[key_index++] = key;
-    }
+      // Add time 
+      if (key != NUMPAD_KEY_A && key != NUMPAD_KEY_B && key != NUMPAD_KEY_C && key != NUMPAD_KEY_D && key != NUMPAD_KEY_ASTERISK && key != NUMPAD_KEY_POUND && time_idx <= MAX_TIME_ARR_IDX) {
+        lcd_set_ddram_addr(LCD_LINE1_ADDR + LCD_CHAR_POSITION_7 + time_idx);
+        hex_to_lcd(key);
+        time_array[time_idx++] = key;
+      }
+    } 
+
+    reprint_menu = false;
   }
-
-  // start_microwave();
 }
 
 int menu_selection() {
@@ -379,42 +394,50 @@ int power_selection() {
   return power;
 }
 
-// void start_microwave(uint16_t time, uint8_t power) {
-//   uint16_t time_in_msec = time * 1000;
-//   uint8_t duty_cycle = ((power) * 100) / 16;
+void start_microwave(uint16_t time, uint8_t power) {
+  time_in_msec = time * 1000;
+  uint8_t duty_cycle = ((power) * 100) / 16;
 
-//   lcd_clear();
-//   lcd_write_doublebyte(time);
+  motor0_pwm_enable();
+  motor0_set_pwm_dc(duty_cycle);
 
-//   motor0_pwm_enable();
-//   motor0_set_pwm_dc(duty_cycle);
+  msec_delay(50);
+}
 
-//   lcd_set_ddram_addr(LCD_LINE2_ADDR);
-//   lcd_write_doublebyte(time_in_msec);
-
-//   // for (uint16_t count = 0; count < time_in_msec; count++) {
-//   //   lcd_set_ddram_addr(LCD_LINE1_ADDR);
-//   //   lcd_write_doublebyte(count);
-//   //   lcd_set_ddram_addr(LCD_LINE2_ADDR);
-//   //   lcd_write_doublebyte(time_in_msec);
-//   //   msec_delay(1);
-//   // }
-
-//   msec_delay(time_in_msec);
-  
-//   motor0_pwm_disable();
-// }
-
-uint16_t time_array_to_int(uint8_t key_list[], uint8_t max_index) {
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function takes a array of single digit numbers and turns it into a 
+//    number. For example: [1,2] == 12
+// 
+// INPUT PARAMETERS:
+//    time_array - an array of single digit numbers
+//    max_index  - the max index that denotes the length of the number
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    time - the number that was created from the array 
+// -----------------------------------------------------------------------------
+uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index) {
   uint16_t time = 0;
   uint16_t multiplier = pow(10, max_index - 1);
 
   for (uint8_t i = 0; i < max_index; i++) {
-    time += key_list[i] * multiplier;
+    time += time_array[i] * multiplier;
     multiplier /= 10;
   }
 
   return time;
+}
+
+void clear_time(uint8_t *time_array[], uint8_t *time_idx) {
+  lcd_clear();
+  *time_idx = 0;
+
+  for (int i = 0; i < sizeof(time_array); i++) {
+    time_array[i] = 0;
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -457,19 +480,41 @@ void skipLine() {
   UART_out_char('\n');
 }
 
-// void SysTick_Handler(void) {
-//   int second_intervals = 0;
+void SysTick_Handler(void) {
+  int sec_interval_in_msec = 0;
+  int blink_count = 2;
+  char time_string[4];
 
-//   if (run_microwave) {
-//     for (int i = 0; i < 3000; i++) {
-//       if (second_intervals == i) {
-//         lcd_set_ddram_addr(LCD_LINE1_ADDR);
-//         lcd_write_doublebyte(i);
-//         second_intervals += 1000;
-//       }
-//     }
-//   }
-// }
+  if (run_microwave) {
+    for (int i = 0; i <= time_in_msec; i++) {
+      if (sec_interval_in_msec == i) {
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+        sprintf(time_string, "%d", time);
+        lcd_write_string(time_string);
+        lcd_write_string("   ");
+        time--;
+        sec_interval_in_msec += 1000;
+      }
+      msec_delay(1);
+    }
+
+    motor0_pwm_disable();
+    msec_delay(HOLD_ZERO_COUNT);
+
+    lcd_clear();
+    for (int i = 0; i < blink_count; i++) {
+      lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+      lcd_write_string("Done");
+      msec_delay(BLINK_DELAY);
+      lcd_clear();
+      msec_delay(BLINK_DELAY);
+    }
+    
+    sec_interval_in_msec = 0;
+    time_in_msec = 0;
+    run_microwave = false;
+  }
+}
 
 //------------------------------------------------------------------------------
 // DESCRIPTION:
@@ -526,8 +571,6 @@ void config_pb2_interrupt() {
 //    This function configures the GPIO interrupts on the MSPM0+ processor to 
 //    detect when Push Button 1 and 2 is pressed. Once either Push button is 
 //    pressed a global flag will be set to true indicating which one was pushed.
-//    On top of that, push button 2 also obtains the ADC value located on 
-//    channel 5 of ADC0.
 //
 // INPUT PARAMETERS:
 //    none
