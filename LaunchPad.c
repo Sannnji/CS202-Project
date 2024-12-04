@@ -1684,6 +1684,15 @@ void motor0_init(void)
 
 } /* motor0_init */
 
+void motor1_init(void)
+{
+  // Set PA28 (SW2) for TIMA0_C1
+  IOMUX->SECCFG.PINCM[DIP_SW2_IOMUX] = IOMUX_PINCM47_PF_TIMA0_CCP1 | 
+                                    IOMUX_PINCM_PC_CONNECTED;
+  GPIOA->DOESET31_0 = DIP_SW2_MASK;
+
+} /* motor0_init */
+
 
 //-----------------------------------------------------------------------------
 // DESCRIPTION:
@@ -1734,17 +1743,29 @@ void motor0_pwm_init(uint32_t load_value, uint32_t compare_value)
         GPTIMER_CCACT_23_CUACT_CCP_LOW | GPTIMER_CCACT_23_CDACT_DISABLED | 
         GPTIMER_CCACT_23_LACT_DISABLED | GPTIMER_CCACT_23_ZACT_CCP_HIGH);
 
+  TIMA0->COUNTERREGS.CCACT_01[1] = (GPTIMER_CCACT_01_FENACT_DISABLED | 
+        GPTIMER_CCACT_01_CC2UACT_DISABLED | GPTIMER_CCACT_01_CC2DACT_DISABLED |
+        GPTIMER_CCACT_01_CUACT_CCP_LOW | GPTIMER_CCACT_01_CDACT_DISABLED | 
+        GPTIMER_CCACT_01_LACT_DISABLED | GPTIMER_CCACT_01_ZACT_CCP_HIGH);   
+
   // set timer reload value
   TIMA0->COUNTERREGS.LOAD = GPTIMER_LOAD_LD_MASK & (load_value - 1);
 
   // set timer compare value
   TIMA0->COUNTERREGS.CC_23[1] = GPTIMER_CC_23_CCVAL_MASK & compare_value;
 
+  TIMA0->COUNTERREGS.CC_01[1] = GPTIMER_CC_01_CCVAL_MASK & compare_value;
+
   // set compare control for PWM func with output initially low
   TIMA0->COUNTERREGS.OCTL_23[1] = (GPTIMER_OCTL_23_CCPIV_LOW | 
                 GPTIMER_OCTL_23_CCPOINV_NOINV | GPTIMER_OCTL_23_CCPO_FUNCVAL);
   //
   TIMA0->COUNTERREGS.CCCTL_23[1] = GPTIMER_CCCTL_23_CCUPD_IMMEDIATELY;
+
+  TIMA0->COUNTERREGS.OCTL_01[1] = (GPTIMER_OCTL_01_CCPIV_LOW | 
+                GPTIMER_OCTL_01_CCPOINV_NOINV | GPTIMER_OCTL_01_CCPO_FUNCVAL);
+  //
+  TIMA0->COUNTERREGS.CCCTL_01[1] = GPTIMER_CCCTL_01_CCUPD_IMMEDIATELY;
 
 
   // When enabled load 0, set timer to count up
@@ -1758,7 +1779,7 @@ void motor0_pwm_init(uint32_t load_value, uint32_t compare_value)
 
   // set C0 as output
   TIMA0->COMMONREGS.CCPD =(GPTIMER_CCPD_C0CCP3_OUTPUT | 
-         GPTIMER_CCPD_C0CCP2_INPUT | GPTIMER_CCPD_C0CCP1_INPUT | 
+         GPTIMER_CCPD_C0CCP2_INPUT | GPTIMER_CCPD_C0CCP1_OUTPUT | 
          GPTIMER_CCPD_C0CCP0_INPUT);;
 
 } /* motor0_pwm_init */
@@ -1806,6 +1827,12 @@ void motor0_set_pwm_count(uint32_t count)
 {
   TIMA0->COUNTERREGS.CC_23[1] = GPTIMER_CC_23_CCVAL_MASK & count;
 } /* motor0_set_pwm_count */
+
+void motor1_set_pwm_count(uint32_t count)
+{
+  TIMA0->COUNTERREGS.CC_01[1] = GPTIMER_CC_01_CCVAL_MASK & count;
+} /* motor0_set_pwm_count */
+
 
 
 //-----------------------------------------------------------------------------

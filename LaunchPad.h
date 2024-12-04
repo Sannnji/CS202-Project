@@ -292,10 +292,13 @@ uint32_t I2C_send1(uint8_t slave, uint8_t data);
 
 
 void motor0_init(void);
+void motor1_init(void);
 void motor0_pwm_init(uint32_t load_value, uint32_t compare_value);
 void motor0_pwm_enable(void);
 void motor0_pwm_disable(void);
 void motor0_set_pwm_dc(uint8_t duty_cycle);
 void motor0_set_pwm_count(uint32_t count);
+void motor1_set_pwm_count(uint32_t count);
+
 
 #endif // __LAUNCHPAD_H__
