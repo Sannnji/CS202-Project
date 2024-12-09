@@ -40,14 +40,16 @@
 // Define function prototypes used by the program
 //-----------------------------------------------------------------------------
 void start_microwave(uint16_t time, uint8_t power);
-int menu_selection();
+int menu_selection(uint8_t *time_array[], uint8_t *time_num_size);
 void configure_microwave();
 int power_selection();
+void set_microwave_power(uint16_t power);
 
-void clear_time(uint8_t *time_array[], uint8_t *time_idx) ;
+void clear_time(uint8_t *time_array[], uint8_t *time_num_size) ;
 bool check_time_array(uint8_t time_array[]);
 
 uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index);
+void int_to_array(int num, uint8_t *arr, int *size);
 void printMsg(char *str);
 void skipLine(void);
 
@@ -78,6 +80,12 @@ void GROUP1_IRQHandler(void);
 #define POTATO_TIME            800
 #define BEVERAGE_TIME           40
 
+#define DEFROST_TIME_NUM_SIZE           4
+#define PIZZA_TIME_NUM_SIZE             3
+#define POPCORN_TIME_NUM_SIZE           3
+#define POTATO_TIME_NUM_SIZE            3
+#define BEVERAGE_TIME_NUM_SIZE          2
+
 #define NUMPAD_KEY_A            10
 #define NUMPAD_KEY_B            11
 #define NUMPAD_KEY_C            12
@@ -96,7 +104,9 @@ void GROUP1_IRQHandler(void);
 bool g_pb1_pressed = false;
 bool g_pb2_pressed = false;
 bool run_microwave = false;
+bool microwave_stopped = false;
 
+uint8_t microwave_power = 5;
 uint16_t time_in_msec = 0;
 uint16_t time = 0;
 
@@ -138,17 +148,21 @@ void configure_microwave() {
   bool door_closed = true;
   bool reprint_menu = false;
 
-  uint8_t microwave_power = 5;
   uint8_t key = 0;
-  uint8_t time_idx = 0;
+  uint8_t time_num_size = 0;
   uint8_t time_array[4];
+  char power_string[2];
+  char time_string[4];
 
   while (!power_on) {
     // get keypress or start microwave
     lcd_set_ddram_addr(LCD_LINE1_ADDR);
     lcd_write_string("Time: ");
     lcd_set_ddram_addr(LCD_LINE2_ADDR);
-    lcd_write_string("Power: 10");
+    lcd_write_string("Power: ");
+    lcd_set_ddram_addr(LCD_LINE2_ADDR + LCD_CHAR_POSITION_8);
+    sprintf(power_string, "%d", microwave_power);
+    lcd_write_string(power_string);
 
     do {
       key = keypad_scan();
@@ -157,14 +171,15 @@ void configure_microwave() {
 
       // Start Microwave if valid input time
       if (g_pb2_pressed) {
-        if (time_idx > 0 && door_closed) {
-          time = time_array_to_int(time_array, time_idx);
+        if (time_num_size > 0 && door_closed) {
+          g_pb2_pressed = false;
+
+          time = time_array_to_int(time_array, time_num_size);
           
           run_microwave = true;
           start_microwave(time, microwave_power);
-          clear_time(time_array, &time_idx);
-          g_pb2_pressed = false;
-
+          clear_time(time_array, &time_num_size);
+          
           // Set key to exit loop and reprint
           key = 1;
           reprint_menu = true;
@@ -187,32 +202,41 @@ void configure_microwave() {
     } while (key == 0x10);
 
     if (!reprint_menu) {
+      // Add time 
+      if (key != NUMPAD_KEY_A && key != NUMPAD_KEY_B && key != NUMPAD_KEY_C && key != NUMPAD_KEY_D && key != NUMPAD_KEY_ASTERISK && key != NUMPAD_KEY_POUND) {
+        if (time_num_size <= MAX_TIME_ARR_IDX) {
+          lcd_set_ddram_addr(LCD_LINE1_ADDR + LCD_CHAR_POSITION_7 + time_num_size);
+          hex_to_lcd(key);
+          time_array[time_num_size++] = key;
+        }
+      }
+
       // Power Selection
       if (key == NUMPAD_KEY_A) {
-        microwave_power = power_selection();
+        int power = power_selection();
+        if (power != 0) {
+          microwave_power = power;
+        }
+        key = NUMPAD_KEY_C;
+
         lcd_clear();
       }
 
       // Menu Selection
       if (key == NUMPAD_KEY_B) {
-        int selected_item = menu_selection();
+        int selected_item = menu_selection(time_array, &time_num_size);
+        time = time_array_to_int(time_array, time_num_size);
+        sprintf(time_string, "%d", time);
 
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_write_doublebyte(selected_item);
-        
-        // start_microwave();
+        // clear_time(time_array, &time_num_size);
+
+        lcd_set_ddram_addr(LCD_LINE1_ADDR + LCD_CHAR_POSITION_7);
+        lcd_write_string(time_string);
       }
 
       // Clear time on LCD
       if (key == NUMPAD_KEY_C) {
-        clear_time(time_array, &time_idx);
-      }
-
-      // Add time 
-      if (key != NUMPAD_KEY_A && key != NUMPAD_KEY_B && key != NUMPAD_KEY_C && key != NUMPAD_KEY_D && key != NUMPAD_KEY_ASTERISK && key != NUMPAD_KEY_POUND && time_idx <= MAX_TIME_ARR_IDX) {
-        lcd_set_ddram_addr(LCD_LINE1_ADDR + LCD_CHAR_POSITION_7 + time_idx);
-        hex_to_lcd(key);
-        time_array[time_idx++] = key;
+        clear_time(time_array, &time_num_size);
       }
     } 
 
@@ -220,7 +244,7 @@ void configure_microwave() {
   }
 }
 
-int menu_selection() {
+int menu_selection(uint8_t *time_array[], uint8_t *time_num_size) {
   char menu[] = "MENU OPTIONS\n"
                 "    1. Defrost\n"
                 "    2. Pizza\n"
@@ -230,8 +254,10 @@ int menu_selection() {
                 "    6. Exit\n\n"
                 "Enter your selection: ";
   char errorMsg[] = "Please enter a valid menu option";
+
   bool finished = false;
-  int time = 0;
+  int menu_item_time = 0;
+  int size = 0;
 
   while (!finished) {
     printMsg(menu);
@@ -245,30 +271,48 @@ int menu_selection() {
 
     switch (input) {
       case (MENU_ITEM1):
-        time = DEFROST_TIME;
+        menu_item_time = DEFROST_TIME;
+        size = DEFROST_TIME_NUM_SIZE;
+        *time_num_size = size;
         finished = true;
         break;
         
       case (MENU_ITEM2):
-        time = PIZZA_TIME;
+        menu_item_time = PIZZA_TIME;
+        size = PIZZA_TIME_NUM_SIZE;
+        *time_num_size = size;
+        finished = true;
         break;
 
       case (MENU_ITEM3):
-        time = POPCORN_TIME;
+        menu_item_time = POPCORN_TIME;
+        size = POPCORN_TIME_NUM_SIZE;
+        *time_num_size = size;
+        finished = true;
         break;
 
       case (MENU_ITEM4):
-        time = POTATO_TIME;
+        menu_item_time = POTATO_TIME;
+        size = POTATO_TIME_NUM_SIZE;
+        *time_num_size = size;
+        finished = true;
         break;   
 
       case (MENU_ITEM5):
-        time = BEVERAGE_TIME;
+        menu_item_time = BEVERAGE_TIME;
+        size = BEVERAGE_TIME_NUM_SIZE;
+        *time_num_size = size;
+        finished = true;
         break;    
 
       case (MENU_ITEM6):
         finished = true;
         break;        
     }
+  }
+
+  if (menu_item_time != 0) {
+    int_to_array(menu_item_time, time_array, &size);
   }
 
   return time;
@@ -294,96 +338,28 @@ int power_selection() {
 
     switch (key) {
       case (1):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_byte(power);
-      
-        leds_on(key);
+        power = key;
+        set_microwave_power(key);
         break;
 
       case (2):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_byte(power);
-      
-        leds_on(key);
+        power = key;
+        set_microwave_power(key);
         break;
 
       case (3):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_10);
-        lcd_write_doublebyte(power);
-      
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_write_string("Pwr Level: ");
-
-        leds_on(key);
+        power = key;
+        set_microwave_power(key);
         break;
 
       case (4):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
+        power = key;
+        set_microwave_power(key);
         break;
 
       case (5):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
-        break;
-              
-      case (6):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
-        break;
-
-      case (7):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
-        break;
-
-      case (8):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
-        break;
-        
-      case (9):
-        power = key * 10;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(key);
-        break;
-
-      case (0):
-        power = 100;
-        lcd_set_ddram_addr(LCD_LINE1_ADDR);
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
-        lcd_write_doublebyte(power);
-      
-        leds_on(10);
+        power = key;
+        set_microwave_power(key);
         break;
       
       case (NUMPAD_KEY_ASTERISK): 
@@ -398,10 +374,18 @@ void start_microwave(uint16_t time, uint8_t power) {
   time_in_msec = time * 1000;
   uint8_t duty_cycle = ((power) * 100) / 16;
 
-  motor0_pwm_enable();
   motor0_set_pwm_dc(duty_cycle);
-
+  motor0_pwm_enable();
+  
   msec_delay(50);
+}
+
+void set_microwave_power(uint16_t power) {
+  lcd_set_ddram_addr(LCD_LINE1_ADDR);
+  lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
+  hex_to_lcd(power);
+
+  leds_on(power);
 }
 
 //------------------------------------------------------------------------------
@@ -423,7 +407,7 @@ uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index) {
   uint16_t time = 0;
   uint16_t multiplier = pow(10, max_index - 1);
 
-  for (uint8_t i = 0; i < max_index; i++) {
+  for (uint8_t i = 0; i <= max_index; i++) {
     time += time_array[i] * multiplier;
     multiplier /= 10;
   }
@@ -431,9 +415,17 @@ uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index) {
   return time;
 }
 
-void clear_time(uint8_t *time_array[], uint8_t *time_idx) {
+void int_to_array(int num, uint8_t *arr, int *size) {
+    // Fill the array with digits
+    for (int i = *size - 1; i >= 0; i--) {
+        arr[i] = num % 10;
+        num /= 10;
+    }
+}
+
+void clear_time(uint8_t *time_array[], uint8_t *time_num_size) {
   lcd_clear();
-  *time_idx = 0;
+  *time_num_size = 0;
 
   for (int i = 0; i < sizeof(time_array); i++) {
     time_array[i] = 0;
@@ -481,37 +473,126 @@ void skipLine() {
 }
 
 void SysTick_Handler(void) {
+  typedef enum state {
+    MICROWAVE_RUNNING,
+    MICROWAVE_STOPPED
+  } FSM_TYPE_t;
+  FSM_TYPE_t state = MICROWAVE_RUNNING;
+
+  uint32_t group_iidx_status;
+  uint32_t gpio_mis;
+  int pb2_push_count = 0;
+  bool microwave_finished = false;
+
   int sec_interval_in_msec = 0;
   int blink_count = 2;
   char time_string[4];
+  int current_time_in_msec = 0;
+  int time_placeholder = 0;
 
+  uint8_t key = 0;
+
+  // TODO: be able to stop running and clear screen
   if (run_microwave) {
-    for (int i = 0; i <= time_in_msec; i++) {
-      if (sec_interval_in_msec == i) {
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
-        sprintf(time_string, "%d", time);
-        lcd_write_string(time_string);
-        lcd_write_string("   ");
-        time--;
-        sec_interval_in_msec += 1000;
+    while (!microwave_finished) {
+      switch (state) {
+        case MICROWAVE_RUNNING:
+          // Helps resume microwave
+          if (time_placeholder != 0) {
+            current_time_in_msec = time_placeholder;
+          } else {
+            current_time_in_msec = 0;
+          }
+
+          for (current_time_in_msec; current_time_in_msec <= time_in_msec; current_time_in_msec++) {
+            do {
+              group_iidx_status = CPUSS->INT_GROUP[1].IIDX;
+              switch(group_iidx_status) {
+                case (CPUSS_INT_GROUP_IIDX_STAT_INT0):    // PB2
+                  gpio_mis = GPIOA->CPU_INT.MIS;
+                  if ((gpio_mis & GPIO_CPU_INT_MIS_DIO15_MASK) == GPIO_CPU_INT_MIS_DIO15_SET) {
+                    g_pb2_pressed = true;
+                    
+                    // Manually clear bit to acknowledge interrupt
+                    GPIOA->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO15_CLR;
+                  }
+                  break;
+              }
+            } while (group_iidx_status != 0);
+
+            // Stop microwave when pb2 is pressed
+            if (g_pb2_pressed) {
+              microwave_stopped = !microwave_stopped;
+              g_pb2_pressed = false;
+              microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
+              state = MICROWAVE_STOPPED;
+              time_placeholder = current_time_in_msec;
+              current_time_in_msec = time_in_msec + 2;
+            }
+
+            // If microwave is stopped then deincrement to stall
+            if (microwave_stopped) {
+              current_time_in_msec--;
+            } else if (sec_interval_in_msec == current_time_in_msec) {
+              lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+              sprintf(time_string, "%d", time);
+              lcd_write_string(time_string);
+              lcd_write_string("   ");
+
+              time--;
+              sec_interval_in_msec += 1000;
+            }
+            msec_delay(1);
+          }
+          if (state != MICROWAVE_STOPPED) {
+            microwave_finished = true;
+          }
+          break;
+
+        case MICROWAVE_STOPPED:
+          do {
+            key = keypad_scan();
+            wait_no_key_pressed();
+            msec_delay(DEBOUNCE_DELAY);
+
+            if (g_pb2_pressed) {
+              microwave_stopped = !microwave_stopped;
+              g_pb2_pressed = false;
+              microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
+              state = MICROWAVE_RUNNING;
+              key = NUMPAD_KEY_B;
+            }
+          } while (key == 0x10);
+
+          if (key == NUMPAD_KEY_C) {
+            microwave_finished = true;
+          }
+          break;
       }
-      msec_delay(1);
     }
 
-    motor0_pwm_disable();
-    msec_delay(HOLD_ZERO_COUNT);
+    // If time was not cleared 
+    if (key != NUMPAD_KEY_C) {
+      motor0_pwm_disable();
+      msec_delay(HOLD_ZERO_COUNT);
 
-    lcd_clear();
-    for (int i = 0; i < blink_count; i++) {
-      lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
-      lcd_write_string("Done");
-      msec_delay(BLINK_DELAY);
       lcd_clear();
-      msec_delay(BLINK_DELAY);
+      for (int i = 0; i < blink_count; i++) {
+        lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+        lcd_write_string("Done");
+        msec_delay(BLINK_DELAY);
+        lcd_clear();
+        msec_delay(BLINK_DELAY);
+      }
     }
+
+    lcd_set_ddram_addr(LCD_LINE1_ADDR);
+    lcd_write_string("Time:       ");
     
     sec_interval_in_msec = 0;
     time_in_msec = 0;
+    time_placeholder = 0;
+    current_time_in_msec = 0;
     run_microwave = false;
   }
 }
@@ -606,7 +687,7 @@ void GROUP1_IRQHandler(void) {
           // Manually clear bit to acknowledge interrupt
           GPIOA->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO15_CLR;
         }
-      break;
+        break;
     }
 
   } while (group_iidx_status != 0);
