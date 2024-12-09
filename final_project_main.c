@@ -104,7 +104,7 @@ void GROUP1_IRQHandler(void);
 bool g_pb1_pressed = false;
 bool g_pb2_pressed = false;
 bool run_microwave = false;
-bool microwave_stopped = false;
+
 
 uint8_t microwave_power = 5;
 uint16_t time_in_msec = 0;
@@ -129,7 +129,6 @@ int main(void) {
   motor0_init();
   motor0_pwm_init(LOAD_VALUE, 0);
 
-  sys_tick_init(SYST_TICK_PERIOD_COUNT);
   ADC0_init(ADC12_MEMCTL_VRSEL_INTREF_VSSA);
 
   config_pb1_interrupt();
@@ -171,7 +170,8 @@ void configure_microwave() {
 
       // Start Microwave if valid input time
       if (g_pb2_pressed) {
-        if (time_num_size > 0 && door_closed) {
+        if (time_num_size > 0 && door_closed) {\
+          msec_delay(DEBOUNCE_DELAY);
           g_pb2_pressed = false;
 
           time = time_array_to_int(time_array, time_num_size);
@@ -371,13 +371,116 @@ int power_selection() {
 }
 
 void start_microwave(uint16_t time, uint8_t power) {
+  typedef enum state {
+    MICROWAVE_RUNNING,
+    MICROWAVE_STOPPED
+  } FSM_TYPE_t;
+  FSM_TYPE_t state = MICROWAVE_RUNNING;
+
+  int pb2_push_count = 0;
+  bool microwave_finished = false;
+  bool microwave_stopped = false;
+
+  int sec_interval_in_msec = 0;
+  int blink_count = 2;
+  char time_string[4];
+  int current_time_in_msec = 0;
+  int time_placeholder = 0;
+
+  uint8_t key = 0;
+
   time_in_msec = time * 1000;
   uint8_t duty_cycle = ((power) * 100) / 16;
 
   motor0_set_pwm_dc(duty_cycle);
   motor0_pwm_enable();
-  
-  msec_delay(50);
+
+  while (!microwave_finished) {
+    switch (state) {
+      case MICROWAVE_RUNNING:
+        // If microwave is resuming set current time to where it left off
+        if (time_placeholder != 0) {
+          current_time_in_msec = time_placeholder;
+        } else {
+          current_time_in_msec = 0;
+        }
+
+        for (current_time_in_msec; current_time_in_msec <= time_in_msec; current_time_in_msec++) {
+          // Stop microwave when pb2 is pressed
+          if (g_pb2_pressed) {
+            msec_delay(DEBOUNCE_DELAY);
+            microwave_stopped = !microwave_stopped;
+            g_pb2_pressed = false;
+            microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
+            state = MICROWAVE_STOPPED;
+            // Save time, if it the user does not clear it and wants to resume
+            time_placeholder = current_time_in_msec;
+            // Set current time to be out of bounds to exit loop
+            current_time_in_msec = time_in_msec + 2;
+          }
+
+          // If microwave is stopped then deincrement to stall
+          if (!microwave_stopped && (sec_interval_in_msec == current_time_in_msec)) {
+            lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+            sprintf(time_string, "%d", time);
+            lcd_write_string(time_string);
+            lcd_write_string("   ");
+            time--;
+            sec_interval_in_msec += 1000;
+          }
+          msec_delay(1);
+        }
+        if (state != MICROWAVE_STOPPED) {
+          microwave_finished = true;
+        }
+        break;
+
+      case MICROWAVE_STOPPED:
+        do {
+          key = keypad_scan();
+          wait_no_key_pressed();
+          msec_delay(DEBOUNCE_DELAY);
+
+          if (g_pb2_pressed) {
+            msec_delay(DEBOUNCE_DELAY);
+            microwave_stopped = !microwave_stopped;
+            g_pb2_pressed = false;
+            microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
+            state = MICROWAVE_RUNNING;
+
+            // Set key to exit loop
+            key = NUMPAD_KEY_B;
+          }
+        } while (key == 0x10);
+
+        if (key == NUMPAD_KEY_C) {
+          microwave_finished = true;
+        }
+        break;
+    }
+  }
+
+  // If time was not cleared 
+  if (key != NUMPAD_KEY_C) {
+    motor0_pwm_disable();
+    msec_delay(HOLD_ZERO_COUNT);
+    lcd_clear();
+    for (int i = 0; i < blink_count; i++) {
+      lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
+      seg7_on(0, 0);
+      lcd_write_string("Done");
+      msec_delay(BLINK_DELAY);
+      lcd_clear();
+      msec_delay(BLINK_DELAY);
+      seg7_off();
+    }
+  }
+      
+  sec_interval_in_msec = 0;
+  time_in_msec = 0;
+  time_placeholder = 0;
+  current_time_in_msec = 0;
+  run_microwave = false;
 }
 
 void set_microwave_power(uint16_t power) {
@@ -470,131 +573,6 @@ void printMsg(char *str) {
 void skipLine() {
   UART_out_char('\n');
   UART_out_char('\n');
-}
-
-void SysTick_Handler(void) {
-  typedef enum state {
-    MICROWAVE_RUNNING,
-    MICROWAVE_STOPPED
-  } FSM_TYPE_t;
-  FSM_TYPE_t state = MICROWAVE_RUNNING;
-
-  uint32_t group_iidx_status;
-  uint32_t gpio_mis;
-  int pb2_push_count = 0;
-  bool microwave_finished = false;
-
-  int sec_interval_in_msec = 0;
-  int blink_count = 2;
-  char time_string[4];
-  int current_time_in_msec = 0;
-  int time_placeholder = 0;
-
-  uint8_t key = 0;
-
-  // TODO: be able to stop running and clear screen
-  if (run_microwave) {
-    while (!microwave_finished) {
-      switch (state) {
-        case MICROWAVE_RUNNING:
-          // Helps resume microwave
-          if (time_placeholder != 0) {
-            current_time_in_msec = time_placeholder;
-          } else {
-            current_time_in_msec = 0;
-          }
-
-          for (current_time_in_msec; current_time_in_msec <= time_in_msec; current_time_in_msec++) {
-            do {
-              group_iidx_status = CPUSS->INT_GROUP[1].IIDX;
-              switch(group_iidx_status) {
-                case (CPUSS_INT_GROUP_IIDX_STAT_INT0):    // PB2
-                  gpio_mis = GPIOA->CPU_INT.MIS;
-                  if ((gpio_mis & GPIO_CPU_INT_MIS_DIO15_MASK) == GPIO_CPU_INT_MIS_DIO15_SET) {
-                    g_pb2_pressed = true;
-                    
-                    // Manually clear bit to acknowledge interrupt
-                    GPIOA->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO15_CLR;
-                  }
-                  break;
-              }
-            } while (group_iidx_status != 0);
-
-            // Stop microwave when pb2 is pressed
-            if (g_pb2_pressed) {
-              microwave_stopped = !microwave_stopped;
-              g_pb2_pressed = false;
-              microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
-              state = MICROWAVE_STOPPED;
-              time_placeholder = current_time_in_msec;
-              current_time_in_msec = time_in_msec + 2;
-            }
-
-            // If microwave is stopped then deincrement to stall
-            if (microwave_stopped) {
-              current_time_in_msec--;
-            } else if (sec_interval_in_msec == current_time_in_msec) {
-              lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
-              sprintf(time_string, "%d", time);
-              lcd_write_string(time_string);
-              lcd_write_string("   ");
-
-              time--;
-              sec_interval_in_msec += 1000;
-            }
-            msec_delay(1);
-          }
-          if (state != MICROWAVE_STOPPED) {
-            microwave_finished = true;
-          }
-          break;
-
-        case MICROWAVE_STOPPED:
-          do {
-            key = keypad_scan();
-            wait_no_key_pressed();
-            msec_delay(DEBOUNCE_DELAY);
-
-            if (g_pb2_pressed) {
-              microwave_stopped = !microwave_stopped;
-              g_pb2_pressed = false;
-              microwave_stopped ? motor0_pwm_disable() : motor0_pwm_enable();
-              state = MICROWAVE_RUNNING;
-              key = NUMPAD_KEY_B;
-            }
-          } while (key == 0x10);
-
-          if (key == NUMPAD_KEY_C) {
-            microwave_finished = true;
-          }
-          break;
-      }
-    }
-
-    // If time was not cleared 
-    if (key != NUMPAD_KEY_C) {
-      motor0_pwm_disable();
-      msec_delay(HOLD_ZERO_COUNT);
-
-      lcd_clear();
-      for (int i = 0; i < blink_count; i++) {
-        lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
-        lcd_write_string("Done");
-        msec_delay(BLINK_DELAY);
-        lcd_clear();
-        msec_delay(BLINK_DELAY);
-      }
-    }
-
-    lcd_set_ddram_addr(LCD_LINE1_ADDR);
-    lcd_write_string("Time:       ");
-    
-    sec_interval_in_msec = 0;
-    time_in_msec = 0;
-    time_placeholder = 0;
-    current_time_in_msec = 0;
-    run_microwave = false;
-  }
 }
 
 //------------------------------------------------------------------------------
