@@ -60,19 +60,28 @@ void GROUP1_IRQHandler(void);
 //-----------------------------------------------------------------------------
 // Define symbolic constants used by the program
 //-----------------------------------------------------------------------------
-#define LOAD_VALUE            (4000)
-#define msec_5                (5)
-#define DEBOUNCE_DELAY        (300)
+#define LOAD_VALUE            4000
+#define msec_5                   5
+#define msec_2000             2000
+#define DEBOUNCE_DELAY         300
 #define BLINK_DELAY           1000
 #define HOLD_ZERO_COUNT       1000
-#define MAX_TIME_ARR_IDX      3
+#define MAX_TIME_ARR_IDX         3
 
-#define MENU_ITEM1            '1'
-#define MENU_ITEM2            '2'
-#define MENU_ITEM3            '3'
-#define MENU_ITEM4            '4'
-#define MENU_ITEM5            '5'
-#define MENU_ITEM6            '6'
+#define LED6                   (6)
+#define LED5_BI           (0b0101) 
+
+#define d_LETTER              0x5E
+#define o_LETTER              0x5C
+#define n_LETTER              0x54
+#define E_LETTER              0x79
+
+#define MENU_ITEM1             '1'
+#define MENU_ITEM2             '2'
+#define MENU_ITEM3             '3'
+#define MENU_ITEM4             '4'
+#define MENU_ITEM5             '5'
+#define MENU_ITEM6             '6'
 
 #define DEFROST_TIME          1000
 #define PIZZA_TIME             700
@@ -80,11 +89,11 @@ void GROUP1_IRQHandler(void);
 #define POTATO_TIME            800
 #define BEVERAGE_TIME           40
 
-#define DEFROST_TIME_NUM_SIZE           4
-#define PIZZA_TIME_NUM_SIZE             3
-#define POPCORN_TIME_NUM_SIZE           3
-#define POTATO_TIME_NUM_SIZE            3
-#define BEVERAGE_TIME_NUM_SIZE          2
+#define DEFROST_TIME_NUM_SIZE    4
+#define PIZZA_TIME_NUM_SIZE      3
+#define POPCORN_TIME_NUM_SIZE    3
+#define POTATO_TIME_NUM_SIZE     3
+#define BEVERAGE_TIME_NUM_SIZE   2
 
 #define NUMPAD_KEY_A            10
 #define NUMPAD_KEY_B            11
@@ -116,16 +125,14 @@ int main(void) {
   
   keypad_init();
   lcd1602_init();
-  seg7_init();
   dipsw_init();
   lpsw_init();
   led_init();
-  led_enable();
-
+  seg7_init();
+  
   I2C_init();
   UART_init(115200);
 
-  // interferes with LEDS so use only when motor runs
   motor0_init();
   motor1_init();
   motor0_pwm_init(LOAD_VALUE, 0);
@@ -163,17 +170,16 @@ void configure_microwave() {
     lcd_set_ddram_addr(LCD_LINE2_ADDR + LCD_CHAR_POSITION_8);
     sprintf(power_string, "%d", microwave_power);
     lcd_write_string(power_string);
-    leds_on(5);
+    leds_on(LED5_BI);     
+    led_enable();
 
     do {
       key = keypad_scan();
       wait_no_key_pressed();
-      msec_delay(DEBOUNCE_DELAY);
 
       // Start Microwave if valid input time
       if (g_pb2_pressed) {
-        if (time_num_size > 0 && door_closed) {\
-          msec_delay(DEBOUNCE_DELAY);
+        if (time_num_size > 0 && door_closed) {
           g_pb2_pressed = false;
 
           time = time_array_to_int(time_array, time_num_size);
@@ -193,11 +199,21 @@ void configure_microwave() {
       if (g_pb1_pressed) {
         door_closed = !door_closed;
         if (door_closed) {
+          led_off(LED6);
           lcd_set_ddram_addr(LCD_LINE2_ADDR);
           lcd_write_string("Door Closed");
-        } else {
+          msec_delay(msec_2000);
           lcd_set_ddram_addr(LCD_LINE2_ADDR);
-          lcd_write_string("Door Open");
+          lcd_write_string("Power: ");
+          lcd_set_ddram_addr(LCD_LINE2_ADDR + LCD_CHAR_POSITION_8);
+          sprintf(power_string, "%d", microwave_power);
+          lcd_write_string(power_string);
+          lcd_write_string("   ");
+
+        } else {
+          led_on(LED6);
+          lcd_set_ddram_addr(LCD_LINE2_ADDR);
+          lcd_write_string("Door Opened");
         }
         g_pb1_pressed = false;
       }
@@ -398,6 +414,7 @@ void start_microwave(uint16_t time, uint8_t power) {
 
   motor0_set_pwm_dc(duty_cycle);
   motor0_pwm_enable();
+  led_on(LED6);
 
   while (!microwave_finished) {
     switch (state) {
@@ -487,14 +504,27 @@ void start_microwave(uint16_t time, uint8_t power) {
     motor0_pwm_disable();
     msec_delay(HOLD_ZERO_COUNT);
     lcd_clear();
+    led_off(LED6);
+    led_disable();
     for (int i = 0; i < blink_count; i++) {
-      lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
-      seg7_on(0, 0);
-      lcd_write_string("Done");
-      msec_delay(BLINK_DELAY);
-      lcd_clear();
-      msec_delay(BLINK_DELAY);
-      seg7_off();
+
+     int count = 0;
+     const char letters[] = {d_LETTER,o_LETTER,n_LETTER,E_LETTER};
+     uint8_t p;
+
+     while(count < 101)
+     {
+       for (p=0; p<4; p++)
+       {
+         seg7_on(letters[p] , p);
+         msec_delay(msec_5);
+       }
+            
+       count++;
+     }
+        
+     seg7_off();
+     msec_delay(BLINK_DELAY);
     }
   }
       
@@ -674,6 +704,8 @@ void GROUP1_IRQHandler(void) {
         gpio_mis = GPIOB->CPU_INT.MIS;
         if ((gpio_mis & GPIO_CPU_INT_MIS_DIO18_MASK) == GPIO_CPU_INT_MIS_DIO18_SET) {
           g_pb1_pressed = true;
+          g_pb2_pressed = false;
+          msec_delay(DEBOUNCE_DELAY);
           // Manually clear bit to acknowledge interrupt
           GPIOB->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO18_CLR;
         }
@@ -682,8 +714,10 @@ void GROUP1_IRQHandler(void) {
       case (CPUSS_INT_GROUP_IIDX_STAT_INT0):    // PB2
         gpio_mis = GPIOA->CPU_INT.MIS;
         if ((gpio_mis & GPIO_CPU_INT_MIS_DIO15_MASK) == GPIO_CPU_INT_MIS_DIO15_SET) {
+          if(!g_pb1_pressed){
           g_pb2_pressed = true;
-          
+          }
+          msec_delay(DEBOUNCE_DELAY);
           // Manually clear bit to acknowledge interrupt
           GPIOA->CPU_INT.ICLR = GPIO_CPU_INT_ICLR_DIO15_CLR;
         }

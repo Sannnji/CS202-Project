@@ -890,6 +890,8 @@ void seg7_on(uint8_t value, uint8_t seg7_idx)
 {
   leds_on(value);
 
+  seg7_off();
+
   seg7_dig_enable(seg7_idx);
 
 } /* seg7_on */
