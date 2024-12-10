@@ -127,6 +127,7 @@ int main(void) {
 
   // interferes with LEDS so use only when motor runs
   motor0_init();
+  motor1_init();
   motor0_pwm_init(LOAD_VALUE, 0);
 
   ADC0_init(ADC12_MEMCTL_VRSEL_INTREF_VSSA);
@@ -380,7 +381,9 @@ void start_microwave(uint16_t time, uint8_t power) {
   int pb2_push_count = 0;
   bool microwave_finished = false;
   bool microwave_stopped = false;
-
+  bool turntable_cw = true;
+  
+  int count = 100;
   int sec_interval_in_msec = 0;
   int blink_count = 2;
   char time_string[4];
@@ -421,12 +424,30 @@ void start_microwave(uint16_t time, uint8_t power) {
 
           // If microwave is stopped then deincrement to stall
           if (!microwave_stopped && (sec_interval_in_msec == current_time_in_msec)) {
+            motor1_set_pwm_count(count);
             lcd_set_ddram_addr(LCD_CHAR_POSITION_7);
             sprintf(time_string, "%d", time);
             lcd_write_string(time_string);
             lcd_write_string("   ");
             time--;
             sec_interval_in_msec += 1000;
+            // Turn turntable clockwise
+            if (turntable_cw){
+              count += 100;
+            }
+            // Turn turntable counter clocksise
+            else{
+              count -= 100;
+            }
+
+            if (count == 500){
+              turntable_cw = false;
+            }
+
+            if (count == 100){
+              turntable_cw = true;
+            }
+
           }
           msec_delay(1);
         }
