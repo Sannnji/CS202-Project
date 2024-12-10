@@ -163,6 +163,7 @@ void configure_microwave() {
     lcd_set_ddram_addr(LCD_LINE2_ADDR + LCD_CHAR_POSITION_8);
     sprintf(power_string, "%d", microwave_power);
     lcd_write_string(power_string);
+    leds_on(5);
 
     do {
       key = keypad_scan();
@@ -393,7 +394,7 @@ void start_microwave(uint16_t time, uint8_t power) {
   uint8_t key = 0;
 
   time_in_msec = time * 1000;
-  uint8_t duty_cycle = ((power) * 100) / 16;
+  uint8_t duty_cycle = ((power) * 100) / 5;
 
   motor0_set_pwm_dc(duty_cycle);
   motor0_pwm_enable();
