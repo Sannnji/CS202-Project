@@ -1651,7 +1651,7 @@ uint32_t I2C_send1(uint8_t slave, uint8_t data1)
 // DESCRIPTION:
 //		This function configures the IOMUX to drive a motor using PWM. The motor 
 //		control is based on the assumption that one side of the L293D IC is used. 
-//		This function repurposes LED0 for TIMA0 output 3, which is connected to 
+//		This function repurposes LED7 for TIMA0 output 3, which is connected to 
 //		the ENable pin of the L293D. LED1 and LED2 are configured as general-purpose 
 //		outputs to control the direction of the motor, and these pins are connected 
 //		to the IN pins of the L293D.
@@ -1684,6 +1684,25 @@ void motor0_init(void)
 
 } /* motor0_init */
 
+
+//-----------------------------------------------------------------------------
+// DESCRIPTION:
+//		This function configures the IOMUX to drive a motor using PWM. The motor 
+//		control is based on the assumption that one side of the L293D IC is used. 
+//		This function repurposes SW2 for TIMA0 output 1, which is connected to 
+//		the ENable pin of the L293D. LED1 and LED2 are configured as general-purpose 
+//		outputs to control the direction of the motor, and these pins are connected 
+//		to the IN pins of the L293D.
+//
+// INPUT PARAMETERS:
+//  none
+//
+// OUTPUT PARAMETERS:
+//  none
+//
+// RETURN:
+//  none
+// -----------------------------------------------------------------------------
 void motor1_init(void)
 {
   // Set PA28 (SW2) for TIMA0_C1
@@ -1697,7 +1716,7 @@ void motor1_init(void)
 //-----------------------------------------------------------------------------
 // DESCRIPTION:
 //		This function configures Timer A0 as an up counter to generate a 
-//		PWM signal. The timer is set to operate at 200 kHz without generating 
+//		PWM signal for channel 1 and 3. The timer is set to operate at 200 kHz without generating 
 //		interrupts, continuously restarting when it reaches the specified 
 //		terminal value (load).
 //
@@ -1777,7 +1796,7 @@ void motor0_pwm_init(uint32_t load_value, uint32_t compare_value)
   // No interrupt is required
   TIMA0->CPU_INT.IMASK = GPTIMER_CPU_INT_IMASK_L_CLR;
 
-  // set C0 as output
+  // set C1 and C3 as output
   TIMA0->COMMONREGS.CCPD =(GPTIMER_CCPD_C0CCP3_OUTPUT | 
          GPTIMER_CCPD_C0CCP2_INPUT | GPTIMER_CCPD_C0CCP1_OUTPUT | 
          GPTIMER_CCPD_C0CCP0_INPUT);;
@@ -1811,7 +1830,7 @@ void motor0_set_pwm_dc(uint8_t duty_cycle)
 
 //-----------------------------------------------------------------------------
 // DESCRIPTION:
-//    This function adjusts the PWM signal by setting the timer's threshold 
+//    This function adjusts the PWM signal for channel 3 by setting the timer's threshold 
 //    based on the given timer count value.
 //
 // INPUT PARAMETERS:
@@ -1828,6 +1847,20 @@ void motor0_set_pwm_count(uint32_t count)
   TIMA0->COUNTERREGS.CC_23[1] = GPTIMER_CC_23_CCVAL_MASK & count;
 } /* motor0_set_pwm_count */
 
+//-----------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function adjusts the PWM signal for channel 1 by setting the timer's threshold 
+//    based on the given timer count value.
+//
+// INPUT PARAMETERS:
+//    count - a 32-bit count value used to set the timer's threshold.
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void motor1_set_pwm_count(uint32_t count)
 {
   TIMA0->COUNTERREGS.CC_01[1] = GPTIMER_CC_01_CCVAL_MASK & count;
