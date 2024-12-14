@@ -3,7 +3,7 @@
 //*****************************************************************************
 //  DESIGNER NAME:  Nathan Buonemani and James Ji
 //
-//       LAB NAME:  TBD
+//       LAB NAME:  final_project
 //
 //      FILE NAME:  main.c
 //
@@ -150,6 +150,21 @@ int main(void) {
   NVIC_DisableIRQ(GPIOB_INT_IRQn);
 } /* main */
 
+
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function is the main loop that continuously runs to await a keypad
+//    input. 
+// 
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void configure_microwave() {
   bool power_on = false;
   bool door_closed = true;
@@ -262,6 +277,20 @@ void configure_microwave() {
   }
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function allows the user to select a pre defined menu item which will
+//    set the time on the microwave
+// 
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    time - returns the time of the menu item selected
+// -----------------------------------------------------------------------------
 int menu_selection(uint8_t *time_array[], uint8_t *time_num_size) {
   char menu[] = "MENU OPTIONS\n"
                 "    1. Defrost\n"
@@ -336,6 +365,20 @@ int menu_selection(uint8_t *time_array[], uint8_t *time_num_size) {
   return time;
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function sets the power of the microwave by allowing inputs through
+//    the keypad
+// 
+// INPUT PARAMETERS:
+//    none
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 int power_selection() {
   uint16_t power = 0;
   uint16_t key = 0;
@@ -388,6 +431,21 @@ int power_selection() {
   return power;
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function take in a time value and power value to set the power of the
+//    motor and run for a set amount of time
+// 
+// INPUT PARAMETERS:
+//    time   - uint8_t value representing time set on microwave
+//    power  - uint8_t value representing power
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void start_microwave(uint16_t time, uint8_t power) {
   typedef enum state {
     MICROWAVE_RUNNING,
@@ -535,6 +593,20 @@ void start_microwave(uint16_t time, uint8_t power) {
   run_microwave = false;
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function set the power of the microwave and displays it onto the LED
+//    display
+// 
+// INPUT PARAMETERS:
+//    power - microwave power
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void set_microwave_power(uint16_t power) {
   lcd_set_ddram_addr(LCD_LINE1_ADDR);
   lcd_set_ddram_addr(LCD_CHAR_POSITION_12);
@@ -570,6 +642,21 @@ uint16_t time_array_to_int(uint8_t time_array[], uint8_t max_index) {
   return time;
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function takes a integer and maps it into an array
+// 
+// INPUT PARAMETERS:
+//    num  - a integer
+//    arr  - an array to hold th integer values
+//    size - size of integer
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void int_to_array(int num, uint8_t *arr, int *size) {
     // Fill the array with digits
     for (int i = *size - 1; i >= 0; i--) {
@@ -578,6 +665,21 @@ void int_to_array(int num, uint8_t *arr, int *size) {
     }
 }
 
+//------------------------------------------------------------------------------
+// DESCRIPTION:
+//    This function clears the lcd display and deletes the integer mapped into
+//    a time array
+// 
+// INPUT PARAMETERS:
+//    time_array     - an array that maps out a time integer
+//    time_num_size  - size of the time integer
+//
+// OUTPUT PARAMETERS:
+//    none
+//
+// RETURN:
+//    none
+// -----------------------------------------------------------------------------
 void clear_time(uint8_t *time_array[], uint8_t *time_num_size) {
   lcd_clear();
   *time_num_size = 0;
